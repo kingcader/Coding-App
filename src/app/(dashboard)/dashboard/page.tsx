@@ -199,7 +199,7 @@ export default async function DashboardPage() {
           </Card>
         ) : (
           <div className="grid gap-3">
-            {recentProjects.map((project) => (
+            {recentProjects.map((project: typeof recentProjects[0]) => (
               <Link key={project.id} href={`/projects/${project.id}`}>
                 <Card className="hover:border-gray-700 transition-colors cursor-pointer">
                   <CardContent className="flex items-center gap-4 p-4">
