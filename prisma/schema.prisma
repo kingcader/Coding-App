@@ -1,0 +1,282 @@
+// Prisma schema for AI App Builder Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============ NextAuth Models ============
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // User preferences
+  preferredProvider AIProvider @default(CLAUDE)
+
+  // User's own API keys (encrypted)
+  claudeApiKey  String?   @db.Text
+  openaiApiKey  String?   @db.Text
+
+  accounts      Account[]
+  sessions      Session[]
+  projects      Project[]
+  subscription  Subscription?
+  usageRecords  UsageRecord[]
+  messages      Message[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============ Core App Models ============
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  framework   String?       // e.g., "nextjs", "react", "vue", "express"
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  files       ProjectFile[]
+  generations Generation[]
+  messages    Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+model ProjectFile {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  path       String  // e.g., "src/components/Button.tsx"
+  content    String  @db.Text // File content (text files)
+  mimeType   String? // e.g., "text/typescript"
+  storageUrl String? // Supabase Storage URL for binary files
+  size       Int     @default(0) // File size in bytes
+  version    Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions FileVersion[]
+
+  @@unique([projectId, path])
+  @@index([projectId])
+  @@map("project_files")
+}
+
+model FileVersion {
+  id     String      @id @default(cuid())
+  fileId String
+  file   ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  content      String  @db.Text
+  version      Int
+  generationId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([fileId])
+  @@index([generationId])
+  @@map("file_versions")
+}
+
+model Generation {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  prompt       String           @db.Text // User's input
+  response     String           @db.Text // Full AI response
+  provider     AIProvider // Which AI was used
+  model        String // Specific model used
+  filesChanged Json // Array of file changes: [{path, action, content}]
+  status       GenerationStatus @default(PENDING)
+  errorMessage String?
+
+  // Token usage for billing
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("generations")
+}
+
+enum AIProvider {
+  CLAUDE
+  OPENAI
+}
+
+enum GenerationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+// Chat messages for conversation history
+model Message {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role    MessageRole // user or assistant
+  content String      @db.Text
+
+  // Optional link to generation if this message triggered one
+  generationId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// ============ Subscription Models ============
+
+model Subscription {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tier   SubscriptionTier   @default(FREE)
+  status SubscriptionStatus @default(ACTIVE)
+
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+
+  // Usage limits based on tier (can be overridden)
+  monthlyGenerationsLimit Int @default(5)
+  maxProjectsLimit        Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+  TRIALING
+}
+
+model UsageRecord {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projectId String?
+  type      UsageType
+
+  // Billing period tracking
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Additional metadata
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, periodStart, periodEnd])
+  @@index([projectId])
+  @@index([type])
+  @@map("usage_records")
+}
+
+enum UsageType {
+  GENERATION
+  FILE_UPLOAD
+  EXPORT
+  API_CALL
+}
