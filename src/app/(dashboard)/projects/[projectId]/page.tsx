@@ -73,20 +73,20 @@ export default async function ProjectPage({ params }: PageProps) {
         createdAt: project.createdAt.toISOString(),
         updatedAt: project.updatedAt.toISOString(),
       }}
-      files={project.files.map((f) => ({
+      files={project.files.map((f: typeof project.files[0]) => ({
         id: f.id,
         path: f.path,
         content: f.content,
         version: f.version,
         updatedAt: f.updatedAt.toISOString(),
       }))}
-      messages={project.messages.map((m) => ({
+      messages={project.messages.map((m: typeof project.messages[0]) => ({
         id: m.id,
         role: m.role.toLowerCase() as 'user' | 'assistant' | 'system',
         content: m.content,
         createdAt: m.createdAt.toISOString(),
       }))}
-      generations={project.generations.map((g) => ({
+      generations={project.generations.map((g: typeof project.generations[0]) => ({
         id: g.id,
         prompt: g.prompt,
         status: g.status,
